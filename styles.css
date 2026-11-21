@@ -1447,3 +1447,72 @@ body {
   color: #ffffff;
   text-align: right;
 }
+
+/* Date chip buttons */
+.date-chip-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #8e8e93;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.date-chip-btn:hover, .date-chip-btn.active {
+  background: #007aff;
+  color: #ffffff;
+  border-color: #007aff;
+}
+
+/* Sub-transactions list in Analytics drilldown */
+.analytics-sub-tx-list {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  margin: 4px 0 10px 0;
+  padding: 4px 14px 10px 52px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.analytics-sub-tx-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.analytics-sub-tx-item:last-child {
+  border-bottom: none;
+}
+
+/* Month picker sheet */
+.month-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.month-picker-item {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  padding: 12px 6px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.month-picker-item:hover, .month-picker-item.active {
+  background: #007aff;
+  border-color: #007aff;
+  color: #ffffff;
+}

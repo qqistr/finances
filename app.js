@@ -147,15 +147,125 @@
     'возврат': { name: 'Возврат средств', icon: '🔄', type: 'income' }
   };
 
+  function getLocalDateString(d = new Date()) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function formatTxDate(dateVal) {
+    if (!dateVal) return 'Сегодня';
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return 'Сегодня';
+    const now = new Date();
+    if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+      return 'Сегодня';
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (d.getFullYear() === yesterday.getFullYear() && d.getMonth() === yesterday.getMonth() && d.getDate() === yesterday.getDate()) {
+      return 'Вчера';
+    }
+    const monthsShort = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    const day = d.getDate();
+    const month = monthsShort[d.getMonth()];
+    if (d.getFullYear() === now.getFullYear()) {
+      return `${day} ${month}`;
+    }
+    return `${day} ${month} ${d.getFullYear()}`;
+  }
+
   function parseSmartEntry(text) {
     if (!text || !text.trim()) return null;
-    const clean = text.trim();
-    // find numbers
+    let clean = text.trim();
+
+    // Date detection
+    let detectedDate = new Date();
+    let hasCustomDate = false;
+
+    // 1. Relative keywords
+    if (/\bпозавчера\b/i.test(clean)) {
+      detectedDate = new Date(Date.now() - 2 * 86400000);
+      clean = clean.replace(/\bпозавчера\b/gi, '');
+      hasCustomDate = true;
+    } else if (/\bвчера\b/i.test(clean)) {
+      detectedDate = new Date(Date.now() - 86400000);
+      clean = clean.replace(/\bвчера\b/gi, '');
+      hasCustomDate = true;
+    } else if (/\bсегодня\b/i.test(clean)) {
+      detectedDate = new Date();
+      clean = clean.replace(/\bсегодня\b/gi, '');
+      hasCustomDate = true;
+    }
+
+    // 2. Year detection (e.g. 2026, 2027, "26 года", "27 года")
+    let targetYear = detectedDate.getFullYear();
+    const fullYearMatch = clean.match(/\b(202[5-9]|2030)\b/i);
+    const shortYearMatch = clean.match(/\b(2[5-9])\s*(?:г|года|году)?\b/i);
+    if (fullYearMatch) {
+      targetYear = parseInt(fullYearMatch[1], 10);
+      clean = clean.replace(fullYearMatch[0], '');
+      hasCustomDate = true;
+    } else if (shortYearMatch) {
+      targetYear = 2000 + parseInt(shortYearMatch[1], 10);
+      clean = clean.replace(shortYearMatch[0], '');
+      hasCustomDate = true;
+    }
+
+    // 3. Month detection
+    const MONTH_MAP = [
+      { re: /янв[а-я]*/i, idx: 0 },
+      { re: /фев[а-я]*/i, idx: 1 },
+      { re: /мар[а-я]*/i, idx: 2 },
+      { re: /апр[а-я]*/i, idx: 3 },
+      { re: /ма[еяй]/i, idx: 4 },
+      { re: /июн[а-я]*/i, idx: 5 },
+      { re: /июл[а-я]*/i, idx: 6 },
+      { re: /авг[а-я]*/i, idx: 7 },
+      { re: /сен[а-я]*/i, idx: 8 },
+      { re: /окт[а-я]*/i, idx: 9 },
+      { re: /ноя[а-я]*/i, idx: 10 },
+      { re: /дек[а-я]*/i, idx: 11 }
+    ];
+
+    let targetMonth = detectedDate.getMonth();
+    for (const m of MONTH_MAP) {
+      if (m.re.test(clean)) {
+        targetMonth = m.idx;
+        clean = clean.replace(m.re, '');
+        hasCustomDate = true;
+        break;
+      }
+    }
+
+    // 4. Amount detection (first number found)
     const numMatch = clean.match(/(\d+([\.,]\d+)?)/);
     const amount = numMatch ? parseFloat(numMatch[1].replace(',', '.')) : 0;
-    
-    // remove amount from text to get description
-    let words = clean.replace(/(\d+([\.,]\d+)?)/, '').replace(/р|руб|₽/gi, '').trim();
+    if (numMatch) {
+      clean = clean.replace(numMatch[0], '');
+    }
+
+    // 5. Day detection (if another small number remains between 1 and 31)
+    let targetDay = 15;
+    const dayMatch = clean.match(/\b([1-9]|[12]\d|3[01])\b/);
+    if (dayMatch) {
+      targetDay = parseInt(dayMatch[1], 10);
+      clean = clean.replace(dayMatch[0], '');
+    } else if (!hasCustomDate) {
+      targetDay = detectedDate.getDate();
+    }
+
+    let dateStr = null;
+    if (hasCustomDate) {
+      const yStr = targetYear;
+      const mStr = String(targetMonth + 1).padStart(2, '0');
+      const dStr = String(targetDay).padStart(2, '0');
+      dateStr = `${yStr}-${mStr}-${dStr}`;
+    }
+
+    let words = clean.replace(/р|руб|₽/gi, '').replace(/\bза\b/gi, '').trim();
+    words = words.replace(/\s+/g, ' ');
     if (!words) words = 'Покупка';
 
     let matchedCategory = { name: 'Другое', icon: '🏷️', type: 'expense' };
@@ -172,7 +282,8 @@
       amount: amount,
       category: matchedCategory.name,
       icon: matchedCategory.icon,
-      type: matchedCategory.type
+      type: matchedCategory.type,
+      dateStr: dateStr
     };
   }
 
@@ -589,14 +700,15 @@
     const isExpense = tx.type === 'expense';
     const acc = state.accounts.find(a => a.id === tx.accountId);
     const accName = acc ? acc.name : 'Основной счёт';
+    const dateFormatted = formatTxDate(tx.date);
 
     return `
-      <div class="tx-item" data-id="${tx.id}">
+      <div class="tx-item" data-id="${tx.id}" style="cursor: pointer;" onclick="window.editTransaction('${tx.id}')">
         <div class="tx-left">
           <div class="tx-icon-circle">${tx.icon || '💳'}</div>
           <div class="tx-details">
             <span class="tx-title">${escapeHtml(tx.title)}</span>
-            <span class="tx-meta">${escapeHtml(tx.category || 'Расход')} • ${escapeHtml(accName)}</span>
+            <span class="tx-meta">${escapeHtml(tx.category || 'Расход')} • ${dateFormatted} • ${escapeHtml(accName)}</span>
           </div>
         </div>
         <div class="tx-amount ${isExpense ? 'expense' : 'income'}">
@@ -1032,9 +1144,10 @@
   }
 
   // 3. Add Transaction Modal
-  function openAddTransactionModal(initialText = '') {
+  function openAddTransactionModal(initialText = '', defaultDateStr = null, fromAnalytics = false) {
     const modal = document.getElementById('modal-container');
     const parsed = initialText ? parseSmartEntry(initialText) : null;
+    const initialDateStr = defaultDateStr || (parsed && parsed.dateStr) || getLocalDateString();
 
     modal.innerHTML = `
       <div class="modal-overlay open" id="tx-overlay">
@@ -1048,6 +1161,17 @@
           <div class="segmented-control" id="tx-type-selector">
             <div class="segment-item active" data-type="expense">Расход</div>
             <div class="segment-item" data-type="income">Доход</div>
+          </div>
+
+          <div class="form-group">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <label class="form-label" style="margin-bottom:0;">Дата операции</label>
+              <div style="display:flex; gap:6px;">
+                <button type="button" class="date-chip-btn" id="chip-date-today">Сегодня</button>
+                <button type="button" class="date-chip-btn" id="chip-date-yesterday">Вчера</button>
+              </div>
+            </div>
+            <input type="date" id="tx-date" class="form-input" value="${initialDateStr}" style="color-scheme:dark; font-size:15px;" />
           </div>
 
           <div class="form-group">
@@ -1095,6 +1219,42 @@
     let selectedCategory = parsed ? parsed.category : 'Другое';
     let selectedIcon = parsed ? parsed.icon : '💳';
 
+    const chipToday = document.getElementById('chip-date-today');
+    const chipYesterday = document.getElementById('chip-date-yesterday');
+    const txDateInput = document.getElementById('tx-date');
+
+    const todayStr = getLocalDateString(new Date());
+    const yesterdayStr = getLocalDateString(new Date(Date.now() - 86400000));
+
+    if (initialDateStr === todayStr && chipToday) {
+      chipToday.classList.add('active');
+    } else if (initialDateStr === yesterdayStr && chipYesterday) {
+      chipYesterday.classList.add('active');
+    }
+
+    if (chipToday && txDateInput) {
+      chipToday.addEventListener('click', () => {
+        txDateInput.value = todayStr;
+        chipToday.classList.add('active');
+        if (chipYesterday) chipYesterday.classList.remove('active');
+      });
+    }
+
+    if (chipYesterday && txDateInput) {
+      chipYesterday.addEventListener('click', () => {
+        txDateInput.value = yesterdayStr;
+        chipYesterday.classList.add('active');
+        if (chipToday) chipToday.classList.remove('active');
+      });
+    }
+
+    if (txDateInput) {
+      txDateInput.addEventListener('change', () => {
+        if (chipToday) chipToday.classList.toggle('active', txDateInput.value === todayStr);
+        if (chipYesterday) chipYesterday.classList.toggle('active', txDateInput.value === yesterdayStr);
+      });
+    }
+
     // Type selector
     document.querySelectorAll('#tx-type-selector .segment-item').forEach(seg => {
       seg.addEventListener('click', () => {
@@ -1121,6 +1281,7 @@
       const amount = parseFloat(document.getElementById('tx-amount').value);
       const title = document.getElementById('tx-title').value.trim() || 'Операция';
       let accId = document.getElementById('tx-account').value;
+      const rawDate = document.getElementById('tx-date').value;
 
       if (!amount || amount <= 0) {
         alert('Введите корректную сумму');
@@ -1150,6 +1311,22 @@
         }
       }
 
+      let txIsoDate;
+      if (rawDate) {
+        const parts = rawDate.split('-').map(Number);
+        if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+          const now = new Date();
+          const isToday = (parts[0] === now.getFullYear() && parts[1] === (now.getMonth() + 1) && parts[2] === now.getDate());
+          const h = isToday ? now.getHours() : 12;
+          const m = isToday ? now.getMinutes() : 0;
+          txIsoDate = new Date(parts[0], parts[1] - 1, parts[2], h, m, 0).toISOString();
+        } else {
+          txIsoDate = new Date().toISOString();
+        }
+      } else {
+        txIsoDate = new Date().toISOString();
+      }
+
       state.transactions.unshift({
         id: 'tx_' + Date.now(),
         title,
@@ -1158,12 +1335,199 @@
         category: selectedCategory,
         icon: selectedIcon,
         accountId: accId,
-        date: new Date().toISOString()
+        date: txIsoDate
       });
+
+      // Keep sorted by date descending
+      state.transactions.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+      const shouldReturnToAnalytics = fromAnalytics || !!document.getElementById('analytics-overlay');
 
       saveState();
       closeModal();
       renderApp();
+
+      if (shouldReturnToAnalytics) {
+        const txDateObj = new Date(txIsoDate);
+        const now = new Date();
+        const targetOffset = (txDateObj.getFullYear() - now.getFullYear()) * 12 + (txDateObj.getMonth() - now.getMonth());
+        openAnalyticsModal(txType, targetOffset);
+      }
+    });
+  }
+
+  // 3b. Edit / Delete Transaction Modal
+  function openEditTransactionModal(txId) {
+    const tx = state.transactions.find(t => t.id === txId);
+    if (!tx) return;
+
+    const modal = document.getElementById('modal-container');
+    const txDateStr = getLocalDateString(new Date(tx.date || Date.now()));
+
+    modal.innerHTML = `
+      <div class="modal-overlay open" id="tx-edit-overlay">
+        <div class="bottom-sheet">
+          <div class="sheet-handle"></div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="font-size:20px; font-weight:700;">Редактировать операцию</h3>
+            <button class="sheet-close-btn" id="btn-modal-close">✕</button>
+          </div>
+
+          <div class="segmented-control" id="tx-edit-type-selector">
+            <div class="segment-item ${tx.type === 'expense' ? 'active' : ''}" data-type="expense">Расход</div>
+            <div class="segment-item ${tx.type === 'income' ? 'active' : ''}" data-type="income">Доход</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Дата операции</label>
+            <input type="date" id="tx-edit-date" class="form-input" value="${txDateStr}" style="color-scheme:dark; font-size:15px;" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Сумма (₽)</label>
+            <input type="number" id="tx-edit-amount" class="form-input" style="font-size:24px; font-weight:700;" value="${tx.amount}" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Описание / Назначение</label>
+            <input type="text" id="tx-edit-title" class="form-input" value="${escapeHtml(tx.title)}" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Счёт</label>
+            <select id="tx-edit-account" class="form-select">
+              ${state.accounts.map(acc => `<option value="${acc.id}" ${acc.id === tx.accountId ? 'selected' : ''}>${escapeHtml(acc.name)} (${formatMoney(acc.balance)})</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Категория</label>
+            <div class="quick-category-pills" id="tx-edit-cat-pills">
+              ${[
+                { name: 'Кафе и кофе', icon: '☕' },
+                { name: 'Супермаркеты', icon: '🛒' },
+                { name: 'Транспорт', icon: '🚕' },
+                { name: 'Перевод людям', icon: '👤' },
+                { name: 'Подписки', icon: '📱' },
+                { name: 'Аптека', icon: '💊' },
+                { name: 'Одежда', icon: '👕' },
+                { name: 'Развлечения', icon: '🍿' },
+                { name: 'Зарплата', icon: '💰' }
+              ].map(c => `
+                <div class="cat-pill ${tx.category === c.name ? 'active' : ''}" data-cat="${c.name}" data-icon="${c.icon}">${c.icon} ${c.name}</div>
+              `).join('')}
+            </div>
+          </div>
+
+          <div style="display:flex; gap:10px; margin-top:10px;">
+            <button class="btn-primary" style="flex:1;" id="btn-save-edit-tx">Сохранить</button>
+            <button class="btn-pill-dark" style="color:var(--accent-red); margin-top:0;" id="btn-delete-tx">Удалить</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    let editType = tx.type;
+    let editCategory = tx.category || 'Другое';
+    let editIcon = tx.icon || '💳';
+
+    document.querySelectorAll('#tx-edit-type-selector .segment-item').forEach(seg => {
+      seg.addEventListener('click', () => {
+        document.querySelectorAll('#tx-edit-type-selector .segment-item').forEach(s => s.classList.remove('active'));
+        seg.classList.add('active');
+        editType = seg.getAttribute('data-type');
+      });
+    });
+
+    document.querySelectorAll('#tx-edit-cat-pills .cat-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('#tx-edit-cat-pills .cat-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        editCategory = pill.getAttribute('data-cat');
+        editIcon = pill.getAttribute('data-icon');
+      });
+    });
+
+    document.getElementById('btn-modal-close').addEventListener('click', closeModal);
+    document.getElementById('tx-edit-overlay').addEventListener('click', e => {
+      if (e.target.id === 'tx-edit-overlay') closeModal();
+    });
+
+    document.getElementById('btn-delete-tx').addEventListener('click', () => {
+      if (confirm(`Удалить операцию "${tx.title}" на сумму ${formatMoney(tx.amount)}?`)) {
+        const acc = state.accounts.find(a => a.id === tx.accountId);
+        if (acc) {
+          if (tx.type === 'expense') {
+            acc.balance += Number(tx.amount) || 0;
+          } else {
+            acc.balance -= Number(tx.amount) || 0;
+          }
+        }
+        state.transactions = state.transactions.filter(t => t.id !== tx.id);
+        const wasInAnalytics = !!document.getElementById('analytics-overlay');
+        saveState();
+        closeModal();
+        renderApp();
+        if (wasInAnalytics) {
+          openAnalyticsModal(analyticsActiveType, analyticsMonthOffset);
+        }
+      }
+    });
+
+    document.getElementById('btn-save-edit-tx').addEventListener('click', () => {
+      const amount = parseFloat(document.getElementById('tx-edit-amount').value);
+      const title = document.getElementById('tx-edit-title').value.trim() || 'Операция';
+      const newAccId = document.getElementById('tx-edit-account').value;
+      const rawDate = document.getElementById('tx-edit-date').value;
+
+      if (!amount || amount <= 0) {
+        alert('Введите корректную сумму');
+        return;
+      }
+
+      // Revert old account balance
+      const oldAcc = state.accounts.find(a => a.id === tx.accountId);
+      if (oldAcc) {
+        if (tx.type === 'expense') oldAcc.balance += Number(tx.amount) || 0;
+        else oldAcc.balance -= Number(tx.amount) || 0;
+      }
+
+      // Apply to new account balance
+      const newAcc = state.accounts.find(a => a.id === newAccId);
+      if (newAcc) {
+        if (editType === 'expense') newAcc.balance -= amount;
+        else newAcc.balance += amount;
+      }
+
+      let txIsoDate = tx.date;
+      if (rawDate) {
+        const parts = rawDate.split('-').map(Number);
+        if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+          txIsoDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).toISOString();
+        }
+      }
+
+      tx.title = title;
+      tx.amount = amount;
+      tx.type = editType;
+      tx.category = editCategory;
+      tx.icon = editIcon;
+      tx.accountId = newAccId;
+      tx.date = txIsoDate;
+
+      state.transactions.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+      const wasInAnalytics = !!document.getElementById('analytics-overlay');
+      saveState();
+      closeModal();
+      renderApp();
+
+      if (wasInAnalytics) {
+        const txDateObj = new Date(txIsoDate);
+        const now = new Date();
+        const targetOffset = (txDateObj.getFullYear() - now.getFullYear()) * 12 + (txDateObj.getMonth() - now.getMonth());
+        openAnalyticsModal(editType, targetOffset);
+      }
     });
   }
 
@@ -1469,6 +1833,11 @@
     return months[date.getMonth()];
   }
 
+  function getRussianMonthPrepositional(date) {
+    const prep = ['январе', 'феврале', 'марте', 'апреле', 'мае', 'июне', 'июле', 'августе', 'сентябре', 'октябре', 'ноябре', 'декабре'];
+    return prep[date.getMonth()];
+  }
+
   function formatOperationsCount(count) {
     const n = Math.abs(count) % 100;
     const n1 = n % 10;
@@ -1476,6 +1845,73 @@
     if (n1 > 1 && n1 < 5) return `${count} операции`;
     if (n1 === 1) return `${count} операция`;
     return `${count} операций`;
+  }
+
+  function openMonthPickerModal(currentOffset, onSelect) {
+    const now = new Date();
+    const currTargetDate = new Date(now.getFullYear(), now.getMonth() + currentOffset, 1);
+    let selectedYear = currTargetDate.getFullYear();
+    const selectedMonth = currTargetDate.getMonth();
+
+    const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+    const modal = document.getElementById('modal-container');
+
+    function renderPicker() {
+      modal.innerHTML = `
+        <div class="modal-overlay open" id="month-picker-overlay">
+          <div class="bottom-sheet">
+            <div class="sheet-handle"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+              <h3 style="font-size:20px; font-weight:700;">Выберите месяц</h3>
+              <button class="sheet-close-btn" id="btn-month-picker-close">✕</button>
+            </div>
+
+            <div class="segmented-control" id="year-selector">
+              <div class="segment-item ${selectedYear === 2026 ? 'active' : ''}" data-year="2026">2026 год</div>
+              <div class="segment-item ${selectedYear === 2027 ? 'active' : ''}" data-year="2027">2027 год</div>
+            </div>
+
+            <div class="month-picker-grid">
+              ${months.map((m, idx) => {
+                const isActive = (selectedYear === currTargetDate.getFullYear() && idx === selectedMonth);
+                return `
+                  <button type="button" class="month-picker-item ${isActive ? 'active' : ''}" data-month="${idx}">
+                    ${m}
+                  </button>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.querySelectorAll('#year-selector .segment-item').forEach(seg => {
+        seg.addEventListener('click', () => {
+          selectedYear = parseInt(seg.getAttribute('data-year'), 10);
+          renderPicker();
+        });
+      });
+
+      document.querySelectorAll('.month-picker-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const mIdx = parseInt(btn.getAttribute('data-month'), 10);
+          const newOffset = (selectedYear - now.getFullYear()) * 12 + (mIdx - now.getMonth());
+          onSelect(newOffset);
+        });
+      });
+
+      document.getElementById('btn-month-picker-close').addEventListener('click', () => {
+        openAnalyticsModal(analyticsActiveType, currentOffset);
+      });
+
+      document.getElementById('month-picker-overlay').addEventListener('click', e => {
+        if (e.target.id === 'month-picker-overlay') {
+          openAnalyticsModal(analyticsActiveType, currentOffset);
+        }
+      });
+    }
+
+    renderPicker();
   }
 
   function openAnalyticsModal(type = null, offset = null) {
@@ -1488,6 +1924,7 @@
     const targetMonth = targetDate.getMonth();
     const targetYear = targetDate.getFullYear();
     const monthName = getRussianMonthName(targetDate);
+    const monthPrep = getRussianMonthPrepositional(targetDate);
 
     // Filter transactions for target month and selected type
     const matchingTx = state.transactions.filter(t => {
@@ -1533,9 +1970,14 @@
       ? `conic-gradient(${gradientStops.join(', ')})`
       : '#27272a';
 
+    const isCurrentMonth = (targetMonth === now.getMonth() && targetYear === now.getFullYear());
     const subtitleText = analyticsActiveType === 'expense'
-      ? 'из 100 000 ₽ по плану'
-      : `Всего зачислений за ${monthName.toLowerCase()}`;
+      ? (isCurrentMonth ? 'из 100 000 ₽ по плану' : `Всего трат за ${monthName.toLowerCase()} ${targetYear}`)
+      : `Всего зачислений за ${monthName.toLowerCase()} ${targetYear}`;
+
+    const defMonthStr = String(targetMonth + 1).padStart(2, '0');
+    const defDayStr = isCurrentMonth ? String(now.getDate()).padStart(2, '0') : '15';
+    const prefillDate = `${targetYear}-${defMonthStr}-${defDayStr}`;
 
     modal.innerHTML = `
       <div class="analytics-page-overlay" id="analytics-overlay">
@@ -1576,9 +2018,12 @@
             <div class="donut-ring" style="background: ${donutBackground};">
               <div class="donut-hole">
                 <div class="donut-month-nav">
-                  <button class="donut-arrow" id="btn-month-prev">‹</button>
-                  <span class="donut-month-text">${monthName}</span>
-                  <button class="donut-arrow" id="btn-month-next">›</button>
+                  <button class="donut-arrow" id="btn-month-prev" title="Предыдущий месяц">‹</button>
+                  <div style="display:flex; flex-direction:column; align-items:center; cursor:pointer;" id="donut-month-click" title="Выбрать месяц и год">
+                    <span class="donut-month-text">${monthName}</span>
+                    <span class="donut-year-text" style="font-size:11px; color:#8e8e93; font-weight:600; margin-top:1px;">${targetYear}</span>
+                  </div>
+                  <button class="donut-arrow" id="btn-month-next" title="Следующий месяц">›</button>
                 </div>
               </div>
             </div>
@@ -1586,28 +2031,53 @@
 
           <!-- Categories List -->
           <div class="analytics-cat-list">
-            ${sortedCats.length > 0 ? sortedCats.map(cat => {
-              const theme = getCategoryTheme(cat.name);
-              return `
-                <div class="analytics-cat-row" data-cat="${escapeHtml(cat.name)}">
-                  <div class="analytics-cat-left">
-                    <div class="analytics-cat-icon" style="background: ${theme.bg}; color: ${theme.color};">
-                      ${theme.icon}
+            ${sortedCats.length > 0 ? `
+              ${sortedCats.map(cat => {
+                const theme = getCategoryTheme(cat.name);
+                return `
+                  <div class="analytics-cat-row" data-cat="${escapeHtml(cat.name)}" title="Нажмите, чтобы посмотреть операции">
+                    <div class="analytics-cat-left">
+                      <div class="analytics-cat-icon" style="background: ${theme.bg}; color: ${theme.color};">
+                        ${theme.icon}
+                      </div>
+                      <div>
+                        <div class="analytics-cat-name">${escapeHtml(cat.name)}</div>
+                        <div class="analytics-cat-count">${formatOperationsCount(cat.count)}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div class="analytics-cat-name">${escapeHtml(cat.name)}</div>
-                      <div class="analytics-cat-count">${formatOperationsCount(cat.count)}</div>
-                    </div>
+                    <div class="analytics-cat-amount">${formatMoney(cat.amount)}</div>
                   </div>
-                  <div class="analytics-cat-amount">${formatMoney(cat.amount)}</div>
-                </div>
-              `;
-            }).join('') : `
+                  <div class="analytics-sub-tx-list" style="display:none;">
+                    ${cat.txs.map(t => `
+                      <div class="analytics-sub-tx-item" onclick="window.editTransaction('${t.id}')">
+                        <div>
+                          <div style="color:#fff; font-weight:500;">${escapeHtml(t.title)}</div>
+                          <div style="color:var(--text-secondary); font-size:11px;">${formatTxDate(t.date)}</div>
+                        </div>
+                        <div style="font-weight:600; color:${t.type === 'expense' ? 'var(--text-primary)' : 'var(--success)'};">
+                          ${t.type === 'expense' ? '- ' : '+ '}${formatMoney(t.amount)}
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                `;
+              }).join('')}
+              <div style="margin-top:20px; padding-bottom:16px;">
+                <button class="btn-secondary" id="btn-analytics-add-more" style="width:100%; padding:12px; border-radius:14px; font-size:14px; font-weight:600; background:rgba(255,255,255,0.06); color:#fff; border:1px solid rgba(255,255,255,0.1); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                  <span>+</span> <span>Добавить операцию за ${monthName} ${targetYear}</span>
+                </button>
+              </div>
+            ` : `
               <div style="text-align:center; padding:32px 16px; color:var(--text-muted); font-size:14px;">
-                В ${monthName.toLowerCase()} операций пока нет.<br>
+                В ${monthPrep} ${targetYear} операций пока нет.<br>
                 <span style="font-size:12px; color:var(--text-secondary); margin-top:6px; display:inline-block;">
                   Запишите операцию, и она сразу появится здесь!
                 </span>
+                <div style="margin-top:18px;">
+                  <button class="btn-primary" id="btn-analytics-add-empty" style="padding:10px 22px; font-size:14px; border-radius:24px; display:inline-flex; align-items:center; gap:8px;">
+                    <span>+</span> <span>Добавить за ${monthName.toLowerCase()} ${targetYear}</span>
+                  </button>
+                </div>
               </div>
             `}
           </div>
@@ -1635,17 +2105,53 @@
       openAnalyticsModal(analyticsActiveType, analyticsMonthOffset + 1);
     });
 
+    const monthClicker = document.getElementById('donut-month-click');
+    if (monthClicker) {
+      monthClicker.addEventListener('click', () => {
+        openMonthPickerModal(analyticsMonthOffset, (newOffset) => {
+          openAnalyticsModal(analyticsActiveType, newOffset);
+        });
+      });
+    }
+
+    const btnEmptyAdd = document.getElementById('btn-analytics-add-empty');
+    if (btnEmptyAdd) {
+      btnEmptyAdd.addEventListener('click', () => {
+        openAddTransactionModal('', prefillDate, true);
+      });
+    }
+
+    const btnAddMore = document.getElementById('btn-analytics-add-more');
+    if (btnAddMore) {
+      btnAddMore.addEventListener('click', () => {
+        openAddTransactionModal('', prefillDate, true);
+      });
+    }
+
+    // Toggle sub-transaction lists
+    document.querySelectorAll('.analytics-cat-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const next = row.nextElementSibling;
+        if (next && next.classList.contains('analytics-sub-tx-list')) {
+          const isOpen = next.style.display !== 'none';
+          next.style.display = isOpen ? 'none' : 'block';
+        }
+      });
+    });
+
     const btnMore = document.getElementById('btn-analytics-more');
     if (btnMore) {
       btnMore.addEventListener('click', () => {
-        alert('Анализ финансов: статистика трат по категориям за выбранный период.');
+        alert(`Анализ финансов за ${monthName} ${targetYear}: статистика трат и зачислений.`);
       });
     }
 
     const btnFilter = document.getElementById('btn-analytics-filter');
     if (btnFilter) {
       btnFilter.addEventListener('click', () => {
-        alert('Фильтр: отображаются все операции за выбранный месяц.');
+        openMonthPickerModal(analyticsMonthOffset, (newOffset) => {
+          openAnalyticsModal(analyticsActiveType, newOffset);
+        });
       });
     }
   }
@@ -2695,6 +3201,7 @@
     }
   };
 
+  window.editTransaction = openEditTransactionModal;
   window.openAnalytics = openAnalyticsModal;
 
   // Initial load with quiet cloud sync check

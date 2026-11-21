@@ -1455,10 +1455,10 @@
         method = 'PATCH';
       }
 
-      const res = await fetch(url, {
+      let res = await fetch(url, {
         method,
         headers: {
-          'Authorization': `token ${token}`,
+          'Authorization': `Bearer ${token}`,
           'Accept': 'application/vnd.github+json',
           'Content-Type': 'application/json'
         },
@@ -1473,7 +1473,34 @@
         })
       });
 
+      // If PATCH failed with 404, reset gistId and create a new Gist with POST
+      if (!res.ok && method === 'PATCH' && res.status === 404) {
+        state.settings.gistId = '';
+        url = 'https://api.github.com/gists';
+        method = 'POST';
+        res = await fetch(url, {
+          method,
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            description: 'EcomVision Finances - Private Cloud Sync',
+            public: false,
+            files: {
+              [GIST_FILENAME]: {
+                content: JSON.stringify(payloadData, null, 2)
+              }
+            }
+          })
+        });
+      }
+
       if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error('У вашего токена GitHub не отмечена галочка «gist». В настройках токена на github.com/settings/tokens отметьте галочку «gist» и нажмите «Update token».');
+        }
         const errJson = await res.json().catch(() => ({}));
         throw new Error(errJson.message || `HTTP ${res.status}`);
       }
@@ -1508,7 +1535,7 @@
       if (!gistId) {
         const listRes = await fetch('https://api.github.com/gists', {
           headers: {
-            'Authorization': `token ${token}`,
+            'Authorization': `Bearer ${token}`,
             'Accept': 'application/vnd.github+json'
           }
         });
@@ -1523,18 +1550,23 @@
       }
 
       if (!gistId) {
-        if (!silent) alert('В облаке пока нет сохраненных данных. Нажмите "Отправить в облако".');
+        if (!silent) alert('В облаке пока нет сохраненных данных. Нажмите «Отправить в облако» на первом устройстве.');
         return false;
       }
 
       const res = await fetch(`https://api.github.com/gists/${gistId}`, {
         headers: {
-          'Authorization': `token ${token}`,
+          'Authorization': `Bearer ${token}`,
           'Accept': 'application/vnd.github+json'
         }
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error('У вашего токена GitHub не отмечена галочка «gist». В настройках токена на github.com/settings/tokens отметьте галочку «gist» и нажмите «Update token».');
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
       const gist = await res.json();
       const file = gist.files && gist.files[GIST_FILENAME];
       if (!file || !file.content) throw new Error('Файл данных не найден в Gist');
@@ -1609,7 +1641,7 @@
               </div>
               <ol style="padding-left: 18px; margin: 0; display:flex; flex-direction:column; gap:4px;">
                 <li>Откройте страницу создания токена: <a href="https://github.com/settings/tokens/new" target="_blank" style="color:var(--accent-blue); text-decoration:none;">github.com/settings/tokens/new</a></li>
-                <li>В поле <b>Note</b> напишите <code>finances</code>, отметьте галочку ☑️ <b>repo</b> и внизу нажмите <b>Generate token</b>.</li>
+                <li>В поле <b>Note</b> напишите <code>finances</code>, отметьте галочки ☑️ <b>repo</b> и обязательно ☑️ <b>gist</b>, затем нажмите <b>Generate token</b>.</li>
                 <li>Скопируйте ключ <code>ghp_...</code>, вставьте в поле выше и нажмите <b>«Сохранить»</b>.</li>
                 <li>На <b>iPhone</b> откройте этот сайт, зайдите в Настройки и вставьте тот же ключ — данные сразу начнут синхронизироваться!</li>
               </ol>

@@ -32,7 +32,7 @@
 1. **Создайте токен доступа на GitHub**:
    - Откройте страницу: [github.com/settings/tokens/new](https://github.com/settings/tokens/new)
    - В поле **Note** напишите `finances`
-   - В списке прав отметьте галочку ☑️ **`repo`**
+   - В списке прав отметьте галочки ☑️ **`repo`** и обязательно ☑️ **`gist`** (для создания секретного бэкапа)
    - Нажмите внизу зеленую кнопку **«Generate token»** и скопируйте получившийся ключ `ghp_...`
 2. **На Mac**:
    - Откройте сайт [https://qqistr.github.io/finances/](https://qqistr.github.io/finances/)

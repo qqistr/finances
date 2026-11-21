@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Финансы — Умный бюджет</title>
+  
+  <!-- Apple & PWA Meta -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Финансы">
+  <meta name="theme-color" content="#000000">
+
+  <!-- Inter & SF Pro fallback fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Desktop helper toolbar (visible on widescreen desktops) -->
+  <div class="desktop-controls">
+    <span>EcomVision Финансы</span>
+    <button class="desktop-btn" id="btn-toggle-frame">Вид: iPhone Frame</button>
+    <button class="desktop-btn" id="btn-quick-demo">Демо-данные</button>
+  </div>
+
+  <!-- Main Mobile App Shell -->
+  <div id="app-root"></div>
+
+  <!-- Scripts -->
+  <script src="app.js"></script>
+  <script>
+    // Desktop frame toggle helper
+    document.addEventListener('DOMContentLoaded', () => {
+      const toggleBtn = document.getElementById('btn-toggle-frame');
+      const root = document.getElementById('app-root');
+      let isFrame = true;
+
+      if (toggleBtn && root) {
+        toggleBtn.addEventListener('click', () => {
+          isFrame = !isFrame;
+          if (isFrame) {
+            root.style.maxWidth = '480px';
+            root.style.borderRadius = '44px';
+            root.style.border = '4px solid #27272a';
+            toggleBtn.textContent = 'Вид: iPhone Frame';
+          } else {
+            root.style.maxWidth = '1000px';
+            root.style.borderRadius = '0px';
+            root.style.border = 'none';
+            toggleBtn.textContent = 'Вид: На весь экран';
+          }
+        });
+      }
+
+      const quickDemoBtn = document.getElementById('btn-quick-demo');
+      if (quickDemoBtn) {
+        quickDemoBtn.addEventListener('click', () => {
+          const btnDemo = document.getElementById('btn-demo-data') || document.getElementById('btn-load-demo-full');
+          if (btnDemo) {
+            btnDemo.click();
+          } else {
+            // Trigger direct demo load via event or settings
+            const prof = document.getElementById('btn-profile');
+            if (prof) prof.click();
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html>

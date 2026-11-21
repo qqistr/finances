@@ -103,11 +103,29 @@
   // --- Smart Natural Language Transaction Parser ---
   // e.g. "Кофе 350", "Зарплата 150000", "Такси 450", "Обед 600 карта"
   const CATEGORY_MAP = {
+    'бургер кинг': { name: 'Бургер Кинг', icon: '👑', type: 'expense' },
+    'бургеркинг': { name: 'Бургер Кинг', icon: '👑', type: 'expense' },
+    'burger king': { name: 'Бургер Кинг', icon: '👑', type: 'expense' },
+    'burgerking': { name: 'Бургер Кинг', icon: '👑', type: 'expense' },
+    'бк': { name: 'Бургер Кинг', icon: '👑', type: 'expense' },
+    'вкусна и точка': { name: 'Вкусно — и точка', icon: '🍔', type: 'expense' },
+    'вкусно и точка': { name: 'Вкусно — и точка', icon: '🍔', type: 'expense' },
+    'вкусно - и точка': { name: 'Вкусно — и точка', icon: '🍔', type: 'expense' },
+    'вкусноточка': { name: 'Вкусно — и точка', icon: '🍔', type: 'expense' },
+    'вкусна точка': { name: 'Вкусно — и точка', icon: '🍔', type: 'expense' },
+    'вит': { name: 'Вкусно — и точка', icon: '🍔', type: 'expense' },
+    'макдоналдс': { name: 'Вкусно — и точка', icon: '🍔', type: 'expense' },
+    'макдак': { name: 'Вкусно — и точка', icon: '🍔', type: 'expense' },
+    'mcdonalds': { name: 'Вкусно — и точка', icon: '🍔', type: 'expense' },
+    'фастфуд': { name: 'Фастфуд', icon: '🍔', type: 'expense' },
+    'бургер': { name: 'Бургер Кинг', icon: '🍔', type: 'expense' },
+    'кфс': { name: 'Фастфуд', icon: '🍗', type: 'expense' },
+    'kfc': { name: 'Фастфуд', icon: '🍗', type: 'expense' },
+    'ростикс': { name: 'Фастфуд', icon: '🍗', type: 'expense' },
     'кофе': { name: 'Кофе и кафе', icon: '☕', type: 'expense' },
     'обед': { name: 'Кафе и рестораны', icon: '🍲', type: 'expense' },
     'ужин': { name: 'Кафе и рестораны', icon: '🍽️', type: 'expense' },
     'завтрак': { name: 'Кафе и рестораны', icon: '🥐', type: 'expense' },
-    'бургер': { name: 'Фастфуд', icon: '🍔', type: 'expense' },
     'пицца': { name: 'Кафе и доставка', icon: '🍕', type: 'expense' },
     'продукты': { name: 'Супермаркеты', icon: '🛒', type: 'expense' },
     'магазин': { name: 'Супермаркеты', icon: '🛒', type: 'expense' },
@@ -271,7 +289,13 @@
     let matchedCategory = { name: 'Другое', icon: '🏷️', type: 'expense' };
     const lowerWords = words.toLowerCase();
     for (const key in CATEGORY_MAP) {
-      if (lowerWords.includes(key)) {
+      if (key.length <= 3) {
+        const re = new RegExp(`(^|\\s|[^а-яa-z0-9])${key}($|\\s|[^а-яa-z0-9])`, 'i');
+        if (re.test(lowerWords)) {
+          matchedCategory = CATEGORY_MAP[key];
+          break;
+        }
+      } else if (lowerWords.includes(key)) {
         matchedCategory = CATEGORY_MAP[key];
         break;
       }
@@ -1196,6 +1220,8 @@
             <div class="quick-category-pills" id="tx-cat-pills">
               ${[
                 { name: 'Кафе и кофе', icon: '☕' },
+                { name: 'Вкусно — и точка', icon: '🍔' },
+                { name: 'Бургер Кинг', icon: '👑' },
                 { name: 'Супермаркеты', icon: '🛒' },
                 { name: 'Транспорт', icon: '🚕' },
                 { name: 'Перевод людям', icon: '👤' },
@@ -1204,9 +1230,16 @@
                 { name: 'Одежда', icon: '👕' },
                 { name: 'Развлечения', icon: '🍿' },
                 { name: 'Зарплата', icon: '💰' }
-              ].map(c => `
-                <div class="cat-pill ${parsed && parsed.category.includes(c.name.split(' ')[0]) ? 'active' : ''}" data-cat="${c.name}" data-icon="${c.icon}">${c.icon} ${c.name}</div>
-              `).join('')}
+              ].map(c => {
+                const isActive = parsed && (
+                  parsed.category === c.name ||
+                  parsed.category.toLowerCase().includes(c.name.toLowerCase().split(' ')[0]) ||
+                  c.name.toLowerCase().includes(parsed.category.toLowerCase().split(' ')[0])
+                );
+                return `
+                  <div class="cat-pill ${isActive ? 'active' : ''}" data-cat="${c.name}" data-icon="${c.icon}">${c.icon} ${c.name}</div>
+                `;
+              }).join('')}
             </div>
           </div>
 
@@ -1405,6 +1438,8 @@
             <div class="quick-category-pills" id="tx-edit-cat-pills">
               ${[
                 { name: 'Кафе и кофе', icon: '☕' },
+                { name: 'Вкусно — и точка', icon: '🍔' },
+                { name: 'Бургер Кинг', icon: '👑' },
                 { name: 'Супермаркеты', icon: '🛒' },
                 { name: 'Транспорт', icon: '🚕' },
                 { name: 'Перевод людям', icon: '👤' },
@@ -1788,6 +1823,9 @@
   let analyticsMonthOffset = 0;
 
   const TINKOFF_CATEGORY_THEMES = {
+    'Вкусно — и точка': { icon: '🍔', color: '#f97316', bg: 'rgba(249, 115, 22, 0.18)' },
+    'Бургер Кинг': { icon: '👑', color: '#e11d48', bg: 'rgba(225, 29, 72, 0.18)' },
+    'Фастфуд': { icon: '🍔', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.18)' },
     'Переводы людям': { icon: '👥', color: '#84cc16', bg: 'rgba(132, 204, 22, 0.18)' },
     'Супермаркеты': { icon: '🧺', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.18)' },
     'Электроника и бытовая техника': { icon: '💻', color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.18)' },

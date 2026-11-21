@@ -1602,6 +1602,19 @@
               </div>
             </div>
 
+            <!-- Short instruction inside modal -->
+            <div style="background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-top: 8px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+              <div style="font-weight: 700; color: #fff; margin-bottom: 6px; display:flex; align-items:center; gap:6px;">
+                📖 Краткая инструкция по настройке:
+              </div>
+              <ol style="padding-left: 18px; margin: 0; display:flex; flex-direction:column; gap:4px;">
+                <li>Откройте страницу создания токена: <a href="https://github.com/settings/tokens/new" target="_blank" style="color:var(--accent-blue); text-decoration:none;">github.com/settings/tokens/new</a></li>
+                <li>В поле <b>Note</b> напишите <code>finances</code>, отметьте галочку ☑️ <b>repo</b> и внизу нажмите <b>Generate token</b>.</li>
+                <li>Скопируйте ключ <code>ghp_...</code>, вставьте в поле выше и нажмите <b>«Сохранить»</b>.</li>
+                <li>На <b>iPhone</b> откройте этот сайт, зайдите в Настройки и вставьте тот же ключ — данные сразу начнут синхронизироваться!</li>
+              </ol>
+            </div>
+
             ${state.settings.githubToken ? `
               <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px; padding-top:8px; border-top:1px solid var(--border-color);">
                 <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-secondary);">

@@ -1427,11 +1427,194 @@
     document.getElementById('analytics-overlay').addEventListener('click', e => { if (e.target.id === 'analytics-overlay') closeModal(); });
   }
 
-  // --- GITHUB GIST CLOUD SYNC ---
+  // --- GITHUB GIST CLOUD SYNC & TWO-WAY MERGE ---
   const GIST_FILENAME = 'ecomvision_finances_data.json';
+
+  function mergeArraysById(localArr = [], remoteArr = []) {
+    const map = new Map();
+    (remoteArr || []).forEach(item => {
+      if (item && item.id) map.set(item.id, item);
+    });
+    (localArr || []).forEach(item => {
+      if (item && item.id) {
+        map.set(item.id, { ...(map.get(item.id) || {}), ...item });
+      }
+    });
+    return Array.from(map.values());
+  }
+
+  async function getOrFindGistId(token) {
+    if (state.settings.gistId) return state.settings.gistId;
+    try {
+      const listRes = await fetch('https://api.github.com/gists?per_page=100', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github+json'
+        }
+      });
+      if (listRes.ok) {
+        const gists = await listRes.json();
+        const existingGist = gists.find(g => g.files && g.files[GIST_FILENAME]);
+        if (existingGist) {
+          state.settings.gistId = existingGist.id;
+          return existingGist.id;
+        }
+      }
+    } catch (e) {
+      console.warn('Gist lookup error:', e);
+    }
+    return '';
+  }
+
+  async function syncSmart(silent = false) {
+    if (isSyncing || !state.settings || !state.settings.githubToken) return false;
+    const token = state.settings.githubToken.trim();
+    if (!token) return false;
+
+    isSyncing = true;
+    try {
+      let gistId = await getOrFindGistId(token);
+      let remoteData = null;
+
+      if (gistId) {
+        const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github+json'
+          }
+        });
+        if (res.ok) {
+          const gist = await res.json();
+          const file = gist.files && gist.files[GIST_FILENAME];
+          if (file && file.content) {
+            try {
+              remoteData = JSON.parse(file.content);
+            } catch (err) {
+              console.warn('JSON parse error in Gist content:', err);
+            }
+          }
+        } else if (res.status === 404) {
+          gistId = '';
+          state.settings.gistId = '';
+        } else if (res.status === 403) {
+          const errJson = await res.json().catch(() => ({}));
+          if ((errJson.message || '').toLowerCase().includes('rate limit')) {
+            throw new Error('Лимит запросов к GitHub API временно исчерпан. Пожалуйста, подождите несколько минут.');
+          }
+        }
+      }
+
+      const hasLocalData = (state.accounts && state.accounts.length > 0) ||
+                           (state.transactions && state.transactions.length > 0) ||
+                           (state.monthlyPayments && state.monthlyPayments.length > 0);
+
+      const hasRemoteData = remoteData && (
+        (remoteData.accounts && remoteData.accounts.length > 0) ||
+        (remoteData.transactions && remoteData.transactions.length > 0) ||
+        (remoteData.monthlyPayments && remoteData.monthlyPayments.length > 0)
+      );
+
+      // Case 1: Remote has data, but local is empty -> PULL from remote
+      if (hasRemoteData && !hasLocalData) {
+        state.accounts = remoteData.accounts || [];
+        state.transactions = remoteData.transactions || [];
+        state.plans = remoteData.plans || [];
+        state.goals = remoteData.goals || [];
+        state.monthlyPayments = remoteData.monthlyPayments || [];
+        if (remoteData.settings && remoteData.settings.payday) {
+          state.settings.payday = remoteData.settings.payday;
+        }
+      }
+      // Case 2: Both local and remote have data -> MERGE intelligently
+      else if (hasRemoteData && hasLocalData) {
+        state.accounts = mergeArraysById(state.accounts, remoteData.accounts);
+        state.transactions = mergeArraysById(state.transactions, remoteData.transactions);
+        state.plans = mergeArraysById(state.plans, remoteData.plans);
+        state.goals = mergeArraysById(state.goals, remoteData.goals);
+        state.monthlyPayments = mergeArraysById(state.monthlyPayments, remoteData.monthlyPayments);
+      }
+      // Case 3: Local has data, remote is empty -> will be pushed below
+      // Case 4: Neither has data -> initial empty state
+
+      // Save merged/latest state to GitHub Gist
+      const payloadData = {
+        accounts: state.accounts,
+        transactions: state.transactions,
+        plans: state.plans,
+        goals: state.goals,
+        monthlyPayments: state.monthlyPayments,
+        settings: {
+          payday: state.settings.payday,
+          currency: state.settings.currency,
+          updatedAt: new Date().toISOString()
+        }
+      };
+
+      let saveUrl = gistId ? `https://api.github.com/gists/${gistId}` : 'https://api.github.com/gists';
+      let saveMethod = gistId ? 'PATCH' : 'POST';
+
+      const saveRes = await fetch(saveUrl, {
+        method: saveMethod,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          description: 'EcomVision Finances - Private Cloud Sync',
+          public: false,
+          files: {
+            [GIST_FILENAME]: {
+              content: JSON.stringify(payloadData, null, 2)
+            }
+          }
+        })
+      });
+
+      if (!saveRes.ok) {
+        const errJson = await saveRes.json().catch(() => ({}));
+        if (saveRes.status === 404) {
+          throw new Error('У вашего токена GitHub не отмечена галочка «gist». В настройках токена на github.com/settings/tokens отметьте галочку «gist» и нажмите «Update token».');
+        }
+        if (saveRes.status === 403 && (errJson.message || '').toLowerCase().includes('rate limit')) {
+          throw new Error('Лимит запросов к GitHub API временно исчерпан. Пожалуйста, подождите несколько минут.');
+        }
+        throw new Error(errJson.message || `HTTP ${saveRes.status}`);
+      }
+
+      const savedGist = await saveRes.json();
+      state.settings.gistId = savedGist.id;
+      state.settings.lastSyncTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      saveState(false);
+      renderApp();
+
+      if (!silent) {
+        const count = state.accounts.length;
+        alert(`✅ Синхронизация завершена! Доступно счетов: ${count}.`);
+      }
+      return true;
+    } catch (e) {
+      console.error('Smart sync error:', e);
+      if (!silent) {
+        alert('❌ Ошибка синхронизации: ' + e.message);
+      }
+      return false;
+    } finally {
+      isSyncing = false;
+    }
+  }
 
   async function pushToGitHub(silent = false) {
     if (isSyncing || !state.settings || !state.settings.githubToken) return false;
+    
+    // Safety check: if local has no data, prefer smart sync so we never wipe cloud
+    const hasLocalData = (state.accounts && state.accounts.length > 0) ||
+                         (state.transactions && state.transactions.length > 0) ||
+                         (state.monthlyPayments && state.monthlyPayments.length > 0);
+    if (!hasLocalData) {
+      return syncSmart(silent);
+    }
+
     const token = state.settings.githubToken.trim();
     if (!token) return false;
 
@@ -1450,30 +1633,7 @@
     };
 
     try {
-      let gistId = state.settings.gistId;
-
-      // If gistId not stored locally, check if user already has this Gist on GitHub
-      if (!gistId) {
-        try {
-          const listRes = await fetch('https://api.github.com/gists', {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Accept': 'application/vnd.github+json'
-            }
-          });
-          if (listRes.ok) {
-            const gists = await listRes.json();
-            const existingGist = gists.find(g => g.files && g.files[GIST_FILENAME]);
-            if (existingGist) {
-              gistId = existingGist.id;
-              state.settings.gistId = gistId;
-            }
-          }
-        } catch (e) {
-          console.warn('Gist list lookup error:', e);
-        }
-      }
-
+      let gistId = await getOrFindGistId(token);
       let url = 'https://api.github.com/gists';
       let method = 'POST';
 
@@ -1563,25 +1723,7 @@
 
     isSyncing = true;
     try {
-      let gistId = state.settings.gistId;
-
-      // If no gistId yet, find it in user's secret gists
-      if (!gistId) {
-        const listRes = await fetch('https://api.github.com/gists', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/vnd.github+json'
-          }
-        });
-        if (listRes.ok) {
-          const gists = await listRes.json();
-          const targetGist = gists.find(g => g.files && g.files[GIST_FILENAME]);
-          if (targetGist) {
-            gistId = targetGist.id;
-            state.settings.gistId = gistId;
-          }
-        }
-      }
+      let gistId = await getOrFindGistId(token);
 
       if (!gistId) {
         if (!silent) alert('В облаке пока нет сохраненных данных. Нажмите «Отправить в облако» на первом устройстве.');
@@ -1747,7 +1889,7 @@
         state.settings.githubToken = val;
         saveState();
         if (val) {
-          pushToGitHub();
+          syncSmart();
         } else {
           renderApp();
         }
@@ -2110,7 +2252,7 @@
         if (!state.settings.githubToken) {
           openSettingsModal();
         } else {
-          pushToGitHub();
+          syncSmart();
         }
       });
     }
@@ -2287,7 +2429,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     renderApp();
     if (state.settings && state.settings.githubToken && state.settings.autoSync) {
-      pullFromGitHub(true);
+      syncSmart(true);
     }
   });
 })();

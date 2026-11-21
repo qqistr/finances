@@ -328,7 +328,7 @@
     let html = '';
 
     if (!hasAccounts) {
-      // Empty / onboarding state matching Screenshots 1, 2, 3
+      // Empty / onboarding state
       html += `
         <!-- Onboarding Primary Card -->
         <div class="card">
@@ -347,36 +347,6 @@
               ${ICONS.download} Загрузить демо-данные (или перенести копию)
             </button>
           </div>
-        </div>
-
-        <!-- Step 1 Card -->
-        <div class="card" id="card-step-account">
-          <span class="card-badge">1</span>
-          <div class="card-icon-small">
-            ${ICONS.card}
-          </div>
-          <h3 class="card-title">Счёт</h3>
-          <p class="card-desc">Сколько на карте, наличными или на вкладе — сейчас.</p>
-        </div>
-
-        <!-- Step 2 Card -->
-        <div class="card" id="card-step-operations">
-          <span class="card-badge">2</span>
-          <div class="card-icon-small">
-            ${ICONS.list}
-          </div>
-          <h3 class="card-title">Операции</h3>
-          <p class="card-desc">«Кофе 350» — одной строкой: сумма, категория и счёт разберутся сами.</p>
-        </div>
-
-        <!-- Step 3 Card -->
-        <div class="card" id="card-step-plan">
-          <span class="card-badge">3</span>
-          <div class="card-icon-small">
-            ${ICONS.calendar}
-          </div>
-          <h3 class="card-title">План</h3>
-          <p class="card-desc">Зарплата и платежи — и «Сегодня» покажет, сколько можно тратить.</p>
         </div>
       `;
     } else {
@@ -2079,15 +2049,6 @@
         renderApp();
       });
     }
-
-    const cardStepAcc = document.getElementById('card-step-account');
-    if (cardStepAcc) cardStepAcc.addEventListener('click', () => openAddAccountModal());
-
-    const cardStepOps = document.getElementById('card-step-operations');
-    if (cardStepOps) cardStepOps.addEventListener('click', () => openAddTransactionModal('Кофе 350'));
-
-    const cardStepPlan = document.getElementById('card-step-plan');
-    if (cardStepPlan) cardStepPlan.addEventListener('click', () => openAddPlanModal('expense'));
 
     // Section actions in Today tab
     const btnAddAccSec = document.getElementById('btn-add-account-section');

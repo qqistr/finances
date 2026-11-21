@@ -20,56 +20,10 @@
 </head>
 <body>
 
-  <!-- Desktop helper toolbar (visible on widescreen desktops) -->
-  <div class="desktop-controls">
-    <span>EcomVision Финансы</span>
-    <button class="desktop-btn" id="btn-toggle-frame">Вид: iPhone Frame</button>
-    <button class="desktop-btn" id="btn-quick-demo">Демо-данные</button>
-  </div>
-
   <!-- Main Mobile App Shell -->
   <div id="app-root"></div>
 
   <!-- Scripts -->
   <script src="app.js"></script>
-  <script>
-    // Desktop frame toggle helper
-    document.addEventListener('DOMContentLoaded', () => {
-      const toggleBtn = document.getElementById('btn-toggle-frame');
-      const root = document.getElementById('app-root');
-      let isFrame = true;
-
-      if (toggleBtn && root) {
-        toggleBtn.addEventListener('click', () => {
-          isFrame = !isFrame;
-          if (isFrame) {
-            root.style.maxWidth = '480px';
-            root.style.borderRadius = '44px';
-            root.style.border = '4px solid #27272a';
-            toggleBtn.textContent = 'Вид: iPhone Frame';
-          } else {
-            root.style.maxWidth = '1000px';
-            root.style.borderRadius = '0px';
-            root.style.border = 'none';
-            toggleBtn.textContent = 'Вид: На весь экран';
-          }
-        });
-      }
-
-      const quickDemoBtn = document.getElementById('btn-quick-demo');
-      if (quickDemoBtn) {
-        quickDemoBtn.addEventListener('click', () => {
-          const btnDemo = document.getElementById('btn-demo-data') || document.getElementById('btn-load-demo-full');
-          if (btnDemo) {
-            btnDemo.click();
-          } else {
-            // Trigger direct demo load via event or settings
-            const prof = document.getElementById('btn-profile');
-            if (prof) prof.click();
-          }
-        });
-      }
-    });
-  </script>
 </body>
 </html>

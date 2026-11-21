@@ -488,29 +488,53 @@
 
   // 2. OPERATIONS TAB (Screenshot 4)
   function renderOperationsTab() {
+    const hasAccounts = state.accounts.length > 0;
     const hasTransactions = state.transactions.length > 0;
     let html = '';
 
     if (!hasTransactions) {
-      // Empty state matching Screenshot 4
-      html += `
-        <div class="empty-state-box">
-          <div class="empty-state-icon">
-            ${ICONS.wallet}
+      if (!hasAccounts) {
+        // No accounts at all -> prompt to add an account
+        html += `
+          <div class="empty-state-box">
+            <div class="empty-state-icon">
+              ${ICONS.wallet}
+            </div>
+            <h3 class="empty-state-title">Операций пока нет</h3>
+            <p class="empty-state-desc">
+              Сначала добавьте счёт — карту, наличные или вклад. Потом записывайте траты одной строкой, например «Кофе 350».
+            </p>
+            <button class="btn-pill-dark" id="btn-ops-add-account">
+              Добавить счёт
+            </button>
           </div>
-          <h3 class="empty-state-title">Операций пока нет</h3>
-          <p class="empty-state-desc">
-            Сначала добавьте счёт — карту, наличные или вклад. Потом записывайте траты одной строкой, например «Кофе 350».
-          </p>
-          <button class="btn-pill-dark" id="btn-ops-add-account">
-            Добавить счёт
-          </button>
-        </div>
-      `;
+        `;
+      } else {
+        // Accounts exist -> show smart entry and button to record transaction
+        html += `
+          <div class="smart-entry-card" style="margin-bottom: 16px;">
+            <input type="text" id="smart-input-ops" class="smart-entry-input" placeholder="«Кофе 350» одной строкой..." />
+            <button class="smart-entry-btn" id="btn-smart-submit-ops">Записать</button>
+          </div>
+
+          <div class="empty-state-box">
+            <div class="empty-state-icon">
+              ${ICONS.wallet}
+            </div>
+            <h3 class="empty-state-title">Операций пока нет</h3>
+            <p class="empty-state-desc">
+              Запишите расход одной строкой выше или добавьте вручную с выбором категории и счёта:
+            </p>
+            <button class="btn-primary" id="btn-ops-record-tx" style="margin-top: 14px; width: auto; padding: 10px 22px; font-size: 14px;">
+              + Записать операцию
+            </button>
+          </div>
+        `;
+      }
     } else {
       // Operations List with Filters
       html += `
-        <div class="smart-entry-card" style="margin-bottom: 8px;">
+        <div class="smart-entry-card" style="margin-bottom: 14px;">
           <input type="text" id="smart-input-ops" class="smart-entry-input" placeholder="Быстро: «Такси 450»..." />
           <button class="smart-entry-btn" id="btn-smart-submit-ops">Записать</button>
         </div>
@@ -2351,6 +2375,9 @@
 
     const btnOpsAddAcc = document.getElementById('btn-ops-add-account');
     if (btnOpsAddAcc) btnOpsAddAcc.addEventListener('click', () => openAddAccountModal());
+
+    const btnOpsRecordTx = document.getElementById('btn-ops-record-tx');
+    if (btnOpsRecordTx) btnOpsRecordTx.addEventListener('click', () => openAddTransactionModal());
 
     // Plan tab buttons
     const btnAddPlanExp = document.getElementById('btn-add-plan-expense');

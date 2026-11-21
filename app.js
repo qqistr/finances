@@ -1444,7 +1444,6 @@
   }
 
   async function getOrFindGistId(token) {
-    if (state.settings.gistId) return state.settings.gistId;
     try {
       const listRes = await fetch('https://api.github.com/gists?per_page=100', {
         headers: {
@@ -1454,16 +1453,25 @@
       });
       if (listRes.ok) {
         const gists = await listRes.json();
-        const existingGist = gists.find(g => g.files && g.files[GIST_FILENAME]);
-        if (existingGist) {
-          state.settings.gistId = existingGist.id;
-          return existingGist.id;
+        const matchingGists = gists.filter(g => g.files && g.files[GIST_FILENAME]);
+        if (matchingGists.length > 0) {
+          // Sort by file size descending (gist with the most data first!)
+          // then by updated_at descending (most recently updated)
+          matchingGists.sort((a, b) => {
+            const sizeA = (a.files && a.files[GIST_FILENAME] && a.files[GIST_FILENAME].size) || 0;
+            const sizeB = (b.files && b.files[GIST_FILENAME] && b.files[GIST_FILENAME].size) || 0;
+            if (sizeB !== sizeA) return sizeB - sizeA;
+            return new Date(b.updated_at) - new Date(a.updated_at);
+          });
+          const canonical = matchingGists[0];
+          state.settings.gistId = canonical.id;
+          return canonical.id;
         }
       }
     } catch (e) {
       console.warn('Gist lookup error:', e);
     }
-    return '';
+    return state.settings.gistId || '';
   }
 
   async function syncSmart(silent = false) {

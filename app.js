@@ -405,6 +405,22 @@
           `).join('')}
         </div>
 
+        <!-- Tinkoff Financial Analysis Entry Card -->
+        <div class="card" id="card-open-analytics" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #19191d 0%, #121215 100%); margin-top: 10px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 40px; height: 40px; border-radius: 12px; background: rgba(0, 122, 255, 0.15); display: flex; align-items: center; justify-content: center; font-size: 20px;">
+              📊
+            </div>
+            <div>
+              <div style="font-weight: 700; font-size: 15px; color: #fff;">Анализ финансов</div>
+              <div style="font-size: 12px; color: var(--text-secondary);">Графики трат и зачислений по категориям</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px; color: var(--accent-blue); font-size: 13px; font-weight: 600;">
+            <span>Смотреть &gt;</span>
+          </div>
+        </div>
+
         <!-- Recent Operations -->
         <div class="section-header" style="margin-top: 6px;">
           <h3 class="section-title">Сегодняшние траты</h3>
@@ -1403,62 +1419,266 @@
     document.getElementById('assistant-overlay').addEventListener('click', e => { if (e.target.id === 'assistant-overlay') closeModal(); });
   }
 
-  // 7. Analytics Modal
-  function openAnalyticsModal() {
-    const modal = document.getElementById('modal-container');
-    const expenses = state.transactions.filter(t => t.type === 'expense');
-    const totalExpenses = expenses.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  // 7. Tinkoff-Style Financial Analysis ("Анализ финансов")
+  let analyticsActiveType = 'expense';
+  let analyticsMonthOffset = 0;
+  let isCashbackBannerClosed = false;
 
-    // Group by category
-    const catTotals = {};
-    expenses.forEach(t => {
-      const c = t.category || 'Другое';
-      catTotals[c] = (catTotals[c] || 0) + Number(t.amount);
+  const TINKOFF_CATEGORY_THEMES = {
+    'Переводы людям': { icon: '👥', color: '#84cc16', bg: 'rgba(132, 204, 22, 0.18)' },
+    'Супермаркеты': { icon: '🧺', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.18)' },
+    'Электроника и бытовая техника': { icon: '💻', color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.18)' },
+    'Аптеки': { icon: '➕', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.18)' },
+    'Аптека': { icon: '➕', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.18)' },
+    'Подписки': { icon: '📅', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.18)' },
+    'Кафе, рестораны, фастфуд': { icon: '🍴', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.18)' },
+    'Кафе и кофе': { icon: '☕', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.18)' },
+    'Кофе и кафе': { icon: '☕', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.18)' },
+    'Транспорт': { icon: '🚌', color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.18)' },
+    'Такси': { icon: '🚕', color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.18)' },
+    'Бизнес-услуги': { icon: '💼', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.18)' },
+    'Снятие наличных': { icon: '💵', color: '#10b981', bg: 'rgba(16, 185, 129, 0.18)' },
+    'Благотворительность': { icon: '🤲', color: '#ec4899', bg: 'rgba(236, 72, 153, 0.18)' },
+    'ЖКХ, связь, интернет': { icon: '🏠', color: '#f97316', bg: 'rgba(249, 115, 22, 0.18)' },
+    'Связь': { icon: '📱', color: '#f97316', bg: 'rgba(249, 115, 22, 0.18)' },
+    'Интернет': { icon: '🌐', color: '#f97316', bg: 'rgba(249, 115, 22, 0.18)' },
+    'ЖКХ': { icon: '💡', color: '#f97316', bg: 'rgba(249, 115, 22, 0.18)' },
+    'Товары для дома': { icon: '🛋️', color: '#eab308', bg: 'rgba(234, 179, 8, 0.18)' },
+    'Одежда и обувь': { icon: '👕', color: '#6366f1', bg: 'rgba(99, 102, 241, 0.18)' },
+    'Одежда': { icon: '👕', color: '#6366f1', bg: 'rgba(99, 102, 241, 0.18)' },
+    'Развлечения': { icon: '🍿', color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.18)' },
+    'Зарплата': { icon: '💰', color: '#22c55e', bg: 'rgba(34, 197, 94, 0.18)' },
+    'Аванс': { icon: '💵', color: '#10b981', bg: 'rgba(16, 185, 129, 0.18)' },
+    'Премия': { icon: '🎁', color: '#eab308', bg: 'rgba(234, 179, 8, 0.18)' },
+    'Фриланс': { icon: '💻', color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.18)' },
+    'Другое': { icon: '🏷️', color: '#64748b', bg: 'rgba(100, 116, 139, 0.18)' }
+  };
+
+  function getCategoryTheme(catName) {
+    if (TINKOFF_CATEGORY_THEMES[catName]) return TINKOFF_CATEGORY_THEMES[catName];
+    const lower = (catName || '').toLowerCase();
+    for (const k in TINKOFF_CATEGORY_THEMES) {
+      if (lower.includes(k.toLowerCase()) || k.toLowerCase().includes(lower)) {
+        return TINKOFF_CATEGORY_THEMES[k];
+      }
+    }
+    return { icon: '🏷️', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.18)' };
+  }
+
+  function getRussianMonthName(date) {
+    const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+    return months[date.getMonth()];
+  }
+
+  function formatOperationsCount(count) {
+    const n = Math.abs(count) % 100;
+    const n1 = n % 10;
+    if (n > 10 && n < 20) return `${count} операций`;
+    if (n1 > 1 && n1 < 5) return `${count} операции`;
+    if (n1 === 1) return `${count} операция`;
+    return `${count} операций`;
+  }
+
+  function openAnalyticsModal(type = null, offset = null) {
+    if (type !== null) analyticsActiveType = type;
+    if (offset !== null) analyticsMonthOffset = offset;
+
+    const modal = document.getElementById('modal-container');
+    const now = new Date();
+    const targetDate = new Date(now.getFullYear(), now.getMonth() + analyticsMonthOffset, 1);
+    const targetMonth = targetDate.getMonth();
+    const targetYear = targetDate.getFullYear();
+    const monthName = getRussianMonthName(targetDate);
+
+    // Filter transactions for target month and selected type
+    const matchingTx = state.transactions.filter(t => {
+      const d = t.date ? new Date(t.date) : new Date();
+      return (t.type === analyticsActiveType) &&
+             (d.getMonth() === targetMonth) &&
+             (d.getFullYear() === targetYear);
     });
 
-    const sortedCats = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
+    const totalAmount = matchingTx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    // Group by category
+    const catGroups = {};
+    matchingTx.forEach(t => {
+      const c = t.category || 'Другое';
+      if (!catGroups[c]) {
+        catGroups[c] = { name: c, amount: 0, count: 0, txs: [] };
+      }
+      catGroups[c].amount += Number(t.amount) || 0;
+      catGroups[c].count += 1;
+      catGroups[c].txs.push(t);
+    });
+
+    const sortedCats = Object.values(catGroups).sort((a, b) => b.amount - a.amount);
+
+    // Build colorful donut conic gradient
+    let gradientStops = [];
+    let currentPct = 0;
+    if (sortedCats.length > 0 && totalAmount > 0) {
+      sortedCats.forEach(item => {
+        const theme = getCategoryTheme(item.name);
+        item.color = theme.color;
+        item.icon = theme.icon;
+        item.bg = theme.bg;
+        const pct = (item.amount / totalAmount) * 100;
+        const nextPct = currentPct + pct;
+        gradientStops.push(`${theme.color} ${currentPct.toFixed(1)}% ${nextPct.toFixed(1)}%`);
+        currentPct = nextPct;
+      });
+    }
+
+    const donutBackground = gradientStops.length > 0
+      ? `conic-gradient(${gradientStops.join(', ')})`
+      : '#27272a';
+
+    const subtitleText = analyticsActiveType === 'expense'
+      ? 'из 100 000 ₽ по плану'
+      : `Всего зачислений за ${monthName.toLowerCase()}`;
 
     modal.innerHTML = `
-      <div class="modal-overlay open" id="analytics-overlay">
-        <div class="bottom-sheet">
-          <div class="sheet-handle"></div>
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h3 style="font-size:20px; font-weight:700;">Аналитика расходов</h3>
-            <button class="sheet-close-btn" id="btn-modal-close">✕</button>
+      <div class="analytics-page-overlay" id="analytics-overlay">
+        <div class="analytics-container">
+          
+          <!-- Top Navigation Bar -->
+          <div class="analytics-top-nav">
+            <button class="analytics-back-btn" id="btn-analytics-back" title="Назад">‹</button>
+            <span class="analytics-nav-title">Анализ финансов</span>
+            <button class="analytics-more-btn" id="btn-analytics-more" title="Опции">•••</button>
           </div>
 
-          <div class="card" style="margin-top:6px;">
-            <span style="font-size:13px; color:var(--text-secondary);">Всего расходов</span>
-            <div style="font-size:28px; font-weight:800; color:#fff;">${formatMoney(totalExpenses)}</div>
+          <!-- Switcher: Filters Icon & [Расходы | Зачисления] -->
+          <div class="analytics-switcher-row">
+            <button class="analytics-filter-icon-btn" id="btn-analytics-filter" title="Фильтры">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line>
+                <line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>
+                <circle cx="4" cy="12" r="2"></circle><circle cx="12" cy="10" r="2"></circle><circle cx="20" cy="14" r="2"></circle>
+              </svg>
+            </button>
+            <div class="analytics-pills-wrap">
+              <button class="analytics-type-pill ${analyticsActiveType === 'expense' ? 'active' : ''}" id="pill-analytics-expense">Расходы</button>
+              <button class="analytics-type-pill ${analyticsActiveType === 'income' ? 'active' : ''}" id="pill-analytics-income">Зачисления</button>
+            </div>
           </div>
 
-          <h4 style="font-size:16px; font-weight:700; margin-top:6px;">По категориям</h4>
-          <div style="display:flex; flex-direction:column; gap:10px;">
-            ${sortedCats.length > 0 ? sortedCats.map(([cat, amt]) => {
-              const pct = totalExpenses > 0 ? Math.round((amt / totalExpenses) * 100) : 0;
+          <!-- Large Amount & Plan Subtitle -->
+          <div class="analytics-hero-amount" id="btn-analytics-amount">
+            <span>${formatMoney(totalAmount)}</span>
+            <span class="analytics-hero-chevron">&gt;</span>
+          </div>
+          <div class="analytics-hero-subtitle">${subtitleText}</div>
+
+          <!-- Donut Wheel with Month Switcher in Center -->
+          <div class="donut-chart-box">
+            <div class="donut-ring" style="background: ${donutBackground};">
+              <div class="donut-hole">
+                <div class="donut-month-nav">
+                  <button class="donut-arrow" id="btn-month-prev">‹</button>
+                  <span class="donut-month-text">${monthName}</span>
+                  <button class="donut-arrow" id="btn-month-next">›</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cashback Widget / Banner -->
+          ${!isCashbackBannerClosed ? `
+            <div class="analytics-banner" id="analytics-cashback-banner">
+              <div class="analytics-banner-left">
+                <div class="analytics-banner-icon">💡</div>
+                <div>
+                  <div class="analytics-banner-title">Настройте кешбэк</div>
+                  <div class="analytics-banner-sub">Выберите 3 категории в этом месяце</div>
+                </div>
+              </div>
+              <button class="analytics-banner-close" id="btn-close-cashback-banner">✕</button>
+            </div>
+          ` : ''}
+
+          <!-- Categories List -->
+          <div class="analytics-cat-list">
+            ${sortedCats.length > 0 ? sortedCats.map(cat => {
+              const theme = getCategoryTheme(cat.name);
               return `
-                <div style="display:flex; flex-direction:column; gap:4px;">
-                  <div style="display:flex; justify-content:space-between; font-size:14px;">
-                    <span>${escapeHtml(cat)}</span>
-                    <span style="font-weight:700;">${formatMoney(amt)} (${pct}%)</span>
+                <div class="analytics-cat-row" data-cat="${escapeHtml(cat.name)}">
+                  <div class="analytics-cat-left">
+                    <div class="analytics-cat-icon" style="background: ${theme.bg}; color: ${theme.color};">
+                      ${theme.icon}
+                    </div>
+                    <div>
+                      <div class="analytics-cat-name">${escapeHtml(cat.name)}</div>
+                      <div class="analytics-cat-count">${formatOperationsCount(cat.count)}</div>
+                    </div>
                   </div>
-                  <div class="goal-progress-bar-bg">
-                    <div class="goal-progress-bar-fill" style="width:${pct}%;"></div>
-                  </div>
+                  <div class="analytics-cat-amount">${formatMoney(cat.amount)}</div>
                 </div>
               `;
             }).join('') : `
-              <p style="color:var(--text-muted); font-size:13px; text-align:center; padding:16px;">
-                Расходов пока не зафиксировано
-              </p>
+              <div style="text-align:center; padding:32px 16px; color:var(--text-muted); font-size:14px;">
+                В ${monthName.toLowerCase()} операций пока нет.<br>
+                <span style="font-size:12px; color:var(--text-secondary); margin-top:6px; display:inline-block;">
+                  Запишите операцию, и она сразу появится здесь!
+                </span>
+              </div>
             `}
           </div>
+
         </div>
       </div>
     `;
 
-    document.getElementById('btn-modal-close').addEventListener('click', closeModal);
-    document.getElementById('analytics-overlay').addEventListener('click', e => { if (e.target.id === 'analytics-overlay') closeModal(); });
+    // Event listeners
+    document.getElementById('btn-analytics-back').addEventListener('click', closeModal);
+    
+    document.getElementById('pill-analytics-expense').addEventListener('click', () => {
+      openAnalyticsModal('expense', analyticsMonthOffset);
+    });
+
+    document.getElementById('pill-analytics-income').addEventListener('click', () => {
+      openAnalyticsModal('income', analyticsMonthOffset);
+    });
+
+    document.getElementById('btn-month-prev').addEventListener('click', () => {
+      openAnalyticsModal(analyticsActiveType, analyticsMonthOffset - 1);
+    });
+
+    document.getElementById('btn-month-next').addEventListener('click', () => {
+      openAnalyticsModal(analyticsActiveType, analyticsMonthOffset + 1);
+    });
+
+    const btnCloseBanner = document.getElementById('btn-close-cashback-banner');
+    if (btnCloseBanner) {
+      btnCloseBanner.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isCashbackBannerClosed = true;
+        openAnalyticsModal();
+      });
+    }
+
+    const banner = document.getElementById('analytics-cashback-banner');
+    if (banner) {
+      banner.addEventListener('click', () => {
+        alert('Кешбэк: в этом месяце вы можете выбрать 3 повышенные категории кешбэка в приложении вашего банка!');
+      });
+    }
+
+    const btnMore = document.getElementById('btn-analytics-more');
+    if (btnMore) {
+      btnMore.addEventListener('click', () => {
+        alert('Анализ финансов: статистика трат по категориям за выбранный период.');
+      });
+    }
+
+    const btnFilter = document.getElementById('btn-analytics-filter');
+    if (btnFilter) {
+      btnFilter.addEventListener('click', () => {
+        alert('Фильтр: отображаются все операции за выбранный месяц.');
+      });
+    }
   }
 
   // --- GITHUB GIST CLOUD SYNC & TWO-WAY MERGE ---
@@ -2341,6 +2561,9 @@
     const btnQuickAdd = document.getElementById('btn-quick-add');
     if (btnQuickAdd) btnQuickAdd.addEventListener('click', () => openAddTransactionModal());
 
+    const cardOpenAnalytics = document.getElementById('card-open-analytics');
+    if (cardOpenAnalytics) cardOpenAnalytics.addEventListener('click', () => openAnalyticsModal());
+
     // Onboarding buttons
     const btnAddAcc = document.getElementById('btn-add-account-card');
     if (btnAddAcc) btnAddAcc.addEventListener('click', () => openAddAccountModal());
@@ -2502,6 +2725,8 @@
       }
     }
   };
+
+  window.openAnalytics = openAnalyticsModal;
 
   // Initial load with quiet cloud sync check
   document.addEventListener('DOMContentLoaded', () => {

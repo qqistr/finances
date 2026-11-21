@@ -13,7 +13,11 @@
       privacyMode: false,
       payday: 25,
       currency: '₽',
-      demoLoaded: false
+      demoLoaded: false,
+      githubToken: '',
+      gistId: '',
+      autoSync: true,
+      lastSyncTime: ''
     },
     activeTab: 'today',
     goalFilter: 'all'
@@ -21,6 +25,7 @@
 
   // --- State Store ---
   let state = loadState();
+  let autoSyncDebounceTimer = null;
 
   function loadState() {
     try {
@@ -43,6 +48,13 @@
   function saveState() {
     try {
       localStorage.setItem('ecomvision_finances_state', JSON.stringify(state));
+      // Trigger background cloud sync if enabled
+      if (state.settings && state.settings.githubToken && state.settings.autoSync) {
+        clearTimeout(autoSyncDebounceTimer);
+        autoSyncDebounceTimer = setTimeout(() => {
+          pushToGitHub(true);
+        }, 1200);
+      }
     } catch (e) {
       console.error('Failed to save state', e);
     }
@@ -156,6 +168,7 @@
 
   // --- SVG Icons Helper ---
   const ICONS = {
+    cloud: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`,
     eye: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
     eyeOff: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`,
     sparkles: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>`,
@@ -208,6 +221,10 @@
           <span class="page-subtitle">${getHeaderSubtitle()}</span>
         </div>
         <div class="header-actions">
+          <button class="icon-button" id="btn-sync" title="Синхронизация с iPhone (GitHub Cloud)" style="position:relative;">
+            ${ICONS.cloud}
+            ${state.settings.githubToken ? '<span style="position:absolute; top:8px; right:8px; width:7px; height:7px; border-radius:50%; background:#30d158; box-shadow:0 0 6px #30d158;"></span>' : ''}
+          </button>
           <button class="icon-button" id="btn-privacy" title="Режим скрытия сумм">
             ${state.settings.privacyMode ? ICONS.eyeOff : ICONS.eye}
           </button>
@@ -1439,6 +1456,146 @@
     document.getElementById('analytics-overlay').addEventListener('click', e => { if (e.target.id === 'analytics-overlay') closeModal(); });
   }
 
+  // --- GITHUB GIST CLOUD SYNC ---
+  const GIST_FILENAME = 'ecomvision_finances_data.json';
+
+  async function pushToGitHub(silent = false) {
+    if (!state.settings || !state.settings.githubToken) return false;
+    const token = state.settings.githubToken.trim();
+    const payloadData = {
+      accounts: state.accounts,
+      transactions: state.transactions,
+      plans: state.plans,
+      goals: state.goals,
+      monthlyPayments: state.monthlyPayments,
+      settings: {
+        payday: state.settings.payday,
+        currency: state.settings.currency,
+        updatedAt: new Date().toISOString()
+      }
+    };
+
+    try {
+      let gistId = state.settings.gistId;
+      let url = 'https://api.github.com/gists';
+      let method = 'POST';
+
+      if (gistId) {
+        url = `https://api.github.com/gists/${gistId}`;
+        method = 'PATCH';
+      }
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          description: 'EcomVision Finances - Private Cloud Sync',
+          public: false,
+          files: {
+            [GIST_FILENAME]: {
+              content: JSON.stringify(payloadData, null, 2)
+            }
+          }
+        })
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || `HTTP ${res.status}`);
+      }
+
+      const gist = await res.json();
+      state.settings.gistId = gist.id;
+      state.settings.lastSyncTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      saveState();
+
+      if (!silent) {
+        alert('✅ Данные успешно сохранены в облако GitHub!');
+      }
+      renderApp();
+      return true;
+    } catch (e) {
+      console.error('Push to GitHub error:', e);
+      if (!silent) {
+        alert('❌ Ошибка синхронизации с GitHub: ' + e.message);
+      }
+      return false;
+    }
+  }
+
+  async function pullFromGitHub(silent = false) {
+    if (!state.settings || !state.settings.githubToken) return false;
+    const token = state.settings.githubToken.trim();
+
+    try {
+      let gistId = state.settings.gistId;
+
+      // If no gistId yet, find it in user's secret gists
+      if (!gistId) {
+        const listRes = await fetch('https://api.github.com/gists', {
+          headers: {
+            'Authorization': `token ${token}`,
+            'Accept': 'application/vnd.github+json'
+          }
+        });
+        if (listRes.ok) {
+          const gists = await listRes.json();
+          const targetGist = gists.find(g => g.files && g.files[GIST_FILENAME]);
+          if (targetGist) {
+            gistId = targetGist.id;
+            state.settings.gistId = gistId;
+          }
+        }
+      }
+
+      if (!gistId) {
+        if (!silent) alert('В облаке пока нет сохраненных данных. Нажмите "Отправить в облако".');
+        return false;
+      }
+
+      const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github+json'
+        }
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const gist = await res.json();
+      const file = gist.files && gist.files[GIST_FILENAME];
+      if (!file || !file.content) throw new Error('Файл данных не найден в Gist');
+
+      const remoteData = JSON.parse(file.content);
+      if (remoteData.accounts) state.accounts = remoteData.accounts;
+      if (remoteData.transactions) state.transactions = remoteData.transactions;
+      if (remoteData.plans) state.plans = remoteData.plans;
+      if (remoteData.goals) state.goals = remoteData.goals;
+      if (remoteData.monthlyPayments) state.monthlyPayments = remoteData.monthlyPayments;
+      if (remoteData.settings && remoteData.settings.payday) {
+        state.settings.payday = remoteData.settings.payday;
+      }
+
+      state.settings.lastSyncTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      saveState();
+
+      if (!silent) {
+        alert('✅ Данные успешно загружены из облака GitHub!');
+      }
+      renderApp();
+      return true;
+    } catch (e) {
+      console.error('Pull from GitHub error:', e);
+      if (!silent) {
+        alert('❌ Ошибка загрузки из GitHub: ' + e.message);
+      }
+      return false;
+    }
+  }
+
   // 8. Settings & Profile Modal
   function openSettingsModal() {
     const modal = document.getElementById('modal-container');
@@ -1451,8 +1608,50 @@
             <button class="sheet-close-btn" id="btn-modal-close">✕</button>
           </div>
 
+          <!-- Cloud Sync Card -->
+          <div class="card" style="border: 1px solid rgba(0, 122, 255, 0.35); background: linear-gradient(145deg, #181824 0%, #111116 100%);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:22px;">☁️</span>
+                <span style="font-weight:700; font-size:16px;">Синхронизация с iPhone</span>
+              </div>
+              <span style="font-size:12px; font-weight:600; color:${state.settings.githubToken ? '#30d158' : 'var(--text-muted)'};">
+                ${state.settings.githubToken ? '● Подключено' : '○ Не настроено'}
+              </span>
+            </div>
+            
+            <p style="font-size:13px; color:var(--text-secondary); line-height:1.45; margin-top:4px;">
+              Автоматически сохраняет все ваши счета, траты и платежи в защищенный секретный бэкап на вашем личном GitHub. Чтобы синхронизировать iPhone, просто вставьте этот же токен в настройки на телефоне!
+            </p>
+
+            <div class="form-group" style="margin-top:6px;">
+              <label class="form-label">Ваш GitHub Token (ghp_...)</label>
+              <div style="display:flex; gap:6px;">
+                <input type="password" id="input-gh-token" class="form-input" style="flex:1; font-family:monospace; font-size:13px;" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" value="${state.settings.githubToken || ''}" />
+                <button class="btn-primary" id="btn-save-gh-token" style="padding:8px 14px; font-size:13px; margin:0; width:auto;">Сохранить</button>
+              </div>
+            </div>
+
+            ${state.settings.githubToken ? `
+              <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px; padding-top:8px; border-top:1px solid var(--border-color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-secondary);">
+                  <span>Последняя синхронизация:</span>
+                  <span style="font-weight:600; color:#fff;">${state.settings.lastSyncTime || 'Только что'}</span>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn-primary" style="flex:1; padding:9px 12px; font-size:13px; width:auto;" id="btn-sync-push">Отправить в облако</button>
+                  <button class="btn-pill-dark" style="flex:1; margin-top:0; padding:9px 12px; font-size:13px;" id="btn-sync-pull">Загрузить на iPhone</button>
+                </div>
+                <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-secondary); cursor:pointer; margin-top:4px;">
+                  <input type="checkbox" id="chk-auto-sync" ${state.settings.autoSync ? 'checked' : ''} />
+                  Авто-синхронизация при любых изменениях
+                </label>
+              </div>
+            ` : ''}
+          </div>
+
           <div class="card">
-            <span style="font-weight:700; font-size:16px;">Хранилище данных</span>
+            <span style="font-weight:700; font-size:16px;">Локальное хранилище данных</span>
             <p style="font-size:13px; color:var(--text-secondary);">
               Все данные сохраняются локально в вашем браузере. Вы можете экспортировать резервную копию или импортировать её на другое устройство.
             </p>
@@ -1483,6 +1682,39 @@
 
     document.getElementById('btn-modal-close').addEventListener('click', closeModal);
     document.getElementById('settings-overlay').addEventListener('click', e => { if (e.target.id === 'settings-overlay') closeModal(); });
+
+    // Cloud sync event listeners
+    const btnSaveGhToken = document.getElementById('btn-save-gh-token');
+    if (btnSaveGhToken) {
+      btnSaveGhToken.addEventListener('click', () => {
+        const val = document.getElementById('input-gh-token').value.trim();
+        state.settings.githubToken = val;
+        saveState();
+        if (val) {
+          pushToGitHub();
+        } else {
+          renderApp();
+        }
+      });
+    }
+
+    const btnSyncPush = document.getElementById('btn-sync-push');
+    if (btnSyncPush) {
+      btnSyncPush.addEventListener('click', () => pushToGitHub());
+    }
+
+    const btnSyncPull = document.getElementById('btn-sync-pull');
+    if (btnSyncPull) {
+      btnSyncPull.addEventListener('click', () => pullFromGitHub());
+    }
+
+    const chkAutoSync = document.getElementById('chk-auto-sync');
+    if (chkAutoSync) {
+      chkAutoSync.addEventListener('change', (e) => {
+        state.settings.autoSync = e.target.checked;
+        saveState();
+      });
+    }
 
     document.getElementById('setting-payday').addEventListener('change', (e) => {
       state.settings.payday = parseInt(e.target.value) || 25;
@@ -1816,6 +2048,17 @@
       });
     }
 
+    const btnSync = document.getElementById('btn-sync');
+    if (btnSync) {
+      btnSync.addEventListener('click', () => {
+        if (!state.settings.githubToken) {
+          openSettingsModal();
+        } else {
+          pushToGitHub();
+        }
+      });
+    }
+
     const btnAssistant = document.getElementById('btn-assistant');
     if (btnAssistant) btnAssistant.addEventListener('click', openAssistantModal);
 
@@ -1993,6 +2236,11 @@
     }
   };
 
-  // Initial load
-  document.addEventListener('DOMContentLoaded', renderApp);
+  // Initial load with quiet cloud sync check
+  document.addEventListener('DOMContentLoaded', () => {
+    renderApp();
+    if (state.settings && state.settings.githubToken && state.settings.autoSync) {
+      pullFromGitHub(true);
+    }
+  });
 })();

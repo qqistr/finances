@@ -26,6 +26,7 @@
   // --- State Store ---
   let state = loadState();
   let autoSyncDebounceTimer = null;
+  let isSyncing = false;
 
   function loadState() {
     try {
@@ -45,15 +46,15 @@
     return JSON.parse(JSON.stringify(DEFAULT_STATE));
   }
 
-  function saveState() {
+  function saveState(triggerSync = true) {
     try {
       localStorage.setItem('ecomvision_finances_state', JSON.stringify(state));
-      // Trigger background cloud sync if enabled
-      if (state.settings && state.settings.githubToken && state.settings.autoSync) {
+      // Trigger background cloud sync ONLY if requested and not in the middle of syncing
+      if (triggerSync && !isSyncing && state.settings && state.settings.githubToken && state.settings.autoSync) {
         clearTimeout(autoSyncDebounceTimer);
         autoSyncDebounceTimer = setTimeout(() => {
           pushToGitHub(true);
-        }, 1200);
+        }, 4000);
       }
     } catch (e) {
       console.error('Failed to save state', e);
@@ -1430,8 +1431,11 @@
   const GIST_FILENAME = 'ecomvision_finances_data.json';
 
   async function pushToGitHub(silent = false) {
-    if (!state.settings || !state.settings.githubToken) return false;
+    if (isSyncing || !state.settings || !state.settings.githubToken) return false;
     const token = state.settings.githubToken.trim();
+    if (!token) return false;
+
+    isSyncing = true;
     const payloadData = {
       accounts: state.accounts,
       transactions: state.transactions,
@@ -1447,6 +1451,29 @@
 
     try {
       let gistId = state.settings.gistId;
+
+      // If gistId not stored locally, check if user already has this Gist on GitHub
+      if (!gistId) {
+        try {
+          const listRes = await fetch('https://api.github.com/gists', {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/vnd.github+json'
+            }
+          });
+          if (listRes.ok) {
+            const gists = await listRes.json();
+            const existingGist = gists.find(g => g.files && g.files[GIST_FILENAME]);
+            if (existingGist) {
+              gistId = existingGist.id;
+              state.settings.gistId = gistId;
+            }
+          }
+        } catch (e) {
+          console.warn('Gist list lookup error:', e);
+        }
+      }
+
       let url = 'https://api.github.com/gists';
       let method = 'POST';
 
@@ -1498,17 +1525,20 @@
       }
 
       if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
         if (res.status === 404) {
           throw new Error('У вашего токена GitHub не отмечена галочка «gist». В настройках токена на github.com/settings/tokens отметьте галочку «gist» и нажмите «Update token».');
         }
-        const errJson = await res.json().catch(() => ({}));
+        if (res.status === 403 && (errJson.message || '').toLowerCase().includes('rate limit')) {
+          throw new Error('Лимит запросов к GitHub API временно исчерпан. Пожалуйста, подождите несколько минут.');
+        }
         throw new Error(errJson.message || `HTTP ${res.status}`);
       }
 
       const gist = await res.json();
       state.settings.gistId = gist.id;
       state.settings.lastSyncTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-      saveState();
+      saveState(false); // DO NOT re-trigger sync!
 
       if (!silent) {
         alert('✅ Данные успешно сохранены в облако GitHub!');
@@ -1521,13 +1551,17 @@
         alert('❌ Ошибка синхронизации с GitHub: ' + e.message);
       }
       return false;
+    } finally {
+      isSyncing = false;
     }
   }
 
   async function pullFromGitHub(silent = false) {
-    if (!state.settings || !state.settings.githubToken) return false;
+    if (isSyncing || !state.settings || !state.settings.githubToken) return false;
     const token = state.settings.githubToken.trim();
+    if (!token) return false;
 
+    isSyncing = true;
     try {
       let gistId = state.settings.gistId;
 
@@ -1565,8 +1599,13 @@
         if (res.status === 404) {
           throw new Error('У вашего токена GitHub не отмечена галочка «gist». В настройках токена на github.com/settings/tokens отметьте галочку «gist» и нажмите «Update token».');
         }
+        const errJson = await res.json().catch(() => ({}));
+        if (res.status === 403 && (errJson.message || '').toLowerCase().includes('rate limit')) {
+          throw new Error('Лимит запросов к GitHub API временно исчерпан. Пожалуйста, подождите несколько минут.');
+        }
         throw new Error(`HTTP ${res.status}`);
       }
+
       const gist = await res.json();
       const file = gist.files && gist.files[GIST_FILENAME];
       if (!file || !file.content) throw new Error('Файл данных не найден в Gist');
@@ -1582,7 +1621,7 @@
       }
 
       state.settings.lastSyncTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-      saveState();
+      saveState(false); // DO NOT re-trigger sync!
 
       if (!silent) {
         alert('✅ Данные успешно загружены из облака GitHub!');
@@ -1595,6 +1634,8 @@
         alert('❌ Ошибка загрузки из GitHub: ' + e.message);
       }
       return false;
+    } finally {
+      isSyncing = false;
     }
   }
 

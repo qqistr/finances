@@ -1455,17 +1455,45 @@
         const gists = await listRes.json();
         const matchingGists = gists.filter(g => g.files && g.files[GIST_FILENAME]);
         if (matchingGists.length > 0) {
-          // Sort by file size descending (gist with the most data first!)
-          // then by updated_at descending (most recently updated)
-          matchingGists.sort((a, b) => {
-            const sizeA = (a.files && a.files[GIST_FILENAME] && a.files[GIST_FILENAME].size) || 0;
-            const sizeB = (b.files && b.files[GIST_FILENAME] && b.files[GIST_FILENAME].size) || 0;
-            if (sizeB !== sizeA) return sizeB - sizeA;
-            return new Date(b.updated_at) - new Date(a.updated_at);
-          });
-          const canonical = matchingGists[0];
-          state.settings.gistId = canonical.id;
-          return canonical.id;
+          if (matchingGists.length === 1) {
+            state.settings.gistId = matchingGists[0].id;
+            return matchingGists[0].id;
+          }
+
+          // If multiple gists exist, inspect each to find the one with actual financial data
+          let bestGistId = matchingGists[0].id;
+          let bestDataScore = -1;
+
+          for (const mg of matchingGists) {
+            try {
+              const dRes = await fetch(`https://api.github.com/gists/${mg.id}`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Accept': 'application/vnd.github+json'
+                }
+              });
+              if (dRes.ok) {
+                const gData = await dRes.json();
+                const fileObj = gData.files && gData.files[GIST_FILENAME];
+                if (fileObj && fileObj.content) {
+                  const parsed = JSON.parse(fileObj.content);
+                  const accCount = (parsed.accounts && parsed.accounts.length) || 0;
+                  const txCount = (parsed.transactions && parsed.transactions.length) || 0;
+                  const payCount = (parsed.monthlyPayments && parsed.monthlyPayments.length) || 0;
+                  const score = accCount * 100 + txCount * 10 + payCount;
+                  if (score > bestDataScore) {
+                    bestDataScore = score;
+                    bestGistId = mg.id;
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn('Error reading gist detail:', err);
+            }
+          }
+
+          state.settings.gistId = bestGistId;
+          return bestGistId;
         }
       }
     } catch (e) {
@@ -1598,7 +1626,8 @@
 
       if (!silent) {
         const count = state.accounts.length;
-        alert(`✅ Синхронизация завершена! Доступно счетов: ${count}.`);
+        const shortId = state.settings.gistId ? state.settings.gistId.slice(0, 8) : '—';
+        alert(`✅ Синхронизация завершена!\nДоступно счетов: ${count}\n(Резервная копия: ${shortId})`);
       }
       return true;
     } catch (e) {
@@ -1843,6 +1872,10 @@
                 <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-secondary);">
                   <span>Последняя синхронизация:</span>
                   <span style="font-weight:600; color:#fff;">${state.settings.lastSyncTime || 'Только что'}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--text-muted);">
+                  <span>Облачный бэкап:</span>
+                  <span style="font-family:monospace; color:var(--accent-blue);">${state.settings.gistId ? state.settings.gistId.slice(0, 8) + '...' : 'Авто-поиск'}</span>
                 </div>
                 <div style="display:flex; gap:8px;">
                   <button class="btn-primary" style="flex:1; padding:9px 12px; font-size:13px; width:auto;" id="btn-sync-push">Отправить в облако</button>

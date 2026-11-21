@@ -1422,7 +1422,6 @@
   // 7. Tinkoff-Style Financial Analysis ("Анализ финансов")
   let analyticsActiveType = 'expense';
   let analyticsMonthOffset = 0;
-  let isCashbackBannerClosed = false;
 
   const TINKOFF_CATEGORY_THEMES = {
     'Переводы людям': { icon: '👥', color: '#84cc16', bg: 'rgba(132, 204, 22, 0.18)' },
@@ -1585,20 +1584,6 @@
             </div>
           </div>
 
-          <!-- Cashback Widget / Banner -->
-          ${!isCashbackBannerClosed ? `
-            <div class="analytics-banner" id="analytics-cashback-banner">
-              <div class="analytics-banner-left">
-                <div class="analytics-banner-icon">💡</div>
-                <div>
-                  <div class="analytics-banner-title">Настройте кешбэк</div>
-                  <div class="analytics-banner-sub">Выберите 3 категории в этом месяце</div>
-                </div>
-              </div>
-              <button class="analytics-banner-close" id="btn-close-cashback-banner">✕</button>
-            </div>
-          ` : ''}
-
           <!-- Categories List -->
           <div class="analytics-cat-list">
             ${sortedCats.length > 0 ? sortedCats.map(cat => {
@@ -1649,22 +1634,6 @@
     document.getElementById('btn-month-next').addEventListener('click', () => {
       openAnalyticsModal(analyticsActiveType, analyticsMonthOffset + 1);
     });
-
-    const btnCloseBanner = document.getElementById('btn-close-cashback-banner');
-    if (btnCloseBanner) {
-      btnCloseBanner.addEventListener('click', (e) => {
-        e.stopPropagation();
-        isCashbackBannerClosed = true;
-        openAnalyticsModal();
-      });
-    }
-
-    const banner = document.getElementById('analytics-cashback-banner');
-    if (banner) {
-      banner.addEventListener('click', () => {
-        alert('Кешбэк: в этом месяце вы можете выбрать 3 повышенные категории кешбэка в приложении вашего банка!');
-      });
-    }
 
     const btnMore = document.getElementById('btn-analytics-more');
     if (btnMore) {
